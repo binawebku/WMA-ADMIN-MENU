@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WMA Admin Menu
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Wan Mohd Aiman Binawebpro.com
  */
 
