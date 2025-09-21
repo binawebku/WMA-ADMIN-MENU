@@ -2,6 +2,10 @@
 
 Provides utility hooks to hide or rearrange menu and submenu items in the WordPress admin area.
 
+## Settings Page
+
+After activating the plugin, visit **Settings → WMA Admin Menu** to hide top-level menus or submenu links via simple checkboxes. The selected items are stored in the `wma_admin_hidden_menus` and `wma_admin_hidden_submenus` options and are merged with any filter-based customizations you provide.
+
 ## Usage
 
 ```php
