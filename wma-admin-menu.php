@@ -4,6 +4,7 @@
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
  * Version: 1.0.0
  * Author: Wan Mohd Aiman Binawebpro.com
+ * Author URI: https://binawebpro.com
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
