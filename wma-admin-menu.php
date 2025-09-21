@@ -26,7 +26,7 @@ class WMA_Admin_Menu {
 
     public function __construct() {
         add_action( 'admin_init', [ $this, 'register_settings' ] );
-        add_action( 'admin_menu', [ $this, 'add_settings_page' ] );
+        add_action( 'admin_menu', [ $this, 'add_settings_page' ], 998 );
         add_action( 'admin_menu', [ $this, 'modify_menus' ], 999 );
     }
 
