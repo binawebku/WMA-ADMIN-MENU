@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WMA Admin Menu
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Wan Mohd Aiman Binawebpro.com
  * Author URI: https://binawebpro.com
  */
@@ -18,13 +18,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class WMA_Admin_Menu {
 
-    private const VERSION                = '1.0.2';
+    private const VERSION                = '1.0.3';
     private const OPTION_GROUP           = 'wma_admin_menu';
     private const OPTION_HIDDEN_MENUS    = 'wma_admin_hidden_menus';
     private const OPTION_HIDDEN_SUBMENUS = 'wma_admin_hidden_submenus';
     private const SETTINGS_PAGE_SLUG     = 'wma-admin-menu';
     private const SETTINGS_CAPABILITY    = 'manage_options';
     private const SETTINGS_PAGE_TITLE    = 'WMA Admin Menu';
+    private const RESET_ACTION_FIELD     = 'wma_admin_menu_action';
+    private const RESET_QUERY_ARG        = 'wma-reset';
 
     /**
      * Tracks whether a fallback menu has been registered for the settings page.
@@ -35,6 +37,7 @@ class WMA_Admin_Menu {
 
     public function __construct() {
         add_action( 'admin_init', [ $this, 'register_settings' ] );
+        add_action( 'admin_init', [ $this, 'handle_reset_request' ], 1 );
         add_action( 'admin_menu', [ $this, 'add_settings_page' ], 998 );
         add_action( 'admin_menu', [ $this, 'modify_menus' ], 999 );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
@@ -135,9 +138,18 @@ class WMA_Admin_Menu {
             return;
         }
 
+        $reset_param = isset( $_GET[ self::RESET_QUERY_ARG ] ) ? (string) $_GET[ self::RESET_QUERY_ARG ] : '';
+
         echo '<div class="wrap">';
         echo '<h1>' . $this->escape_html( self::SETTINGS_PAGE_TITLE ) . '</h1>';
-        echo '<form method="post" action="options.php">';
+
+        if ( function_exists( 'settings_errors' ) ) {
+            settings_errors( 'wma-admin-menu-reset' );
+        } elseif ( '1' === $reset_param ) {
+            echo '<div class="notice notice-success"><p>' . $this->escape_html( 'Settings restored to their defaults.' ) . '</p></div>';
+        }
+
+        echo '<form method="post" action="options.php" data-wma-settings-form="true">';
 
         if ( function_exists( 'settings_fields' ) ) {
             settings_fields( self::OPTION_GROUP );
@@ -147,14 +159,180 @@ class WMA_Admin_Menu {
             do_settings_sections( self::SETTINGS_PAGE_SLUG );
         }
 
-        if ( function_exists( 'submit_button' ) ) {
-            submit_button();
-        } else {
-            echo '<p><input type="submit" value="' . $this->escape_attr( 'Save Changes' ) . '" /></p>';
+        $back_url = $this->get_settings_back_link();
+        $reset_message = 'Resetting clears hidden menus and restores any renamed menu labels to WordPress defaults.';
+
+        echo '<div class="wma-admin-menu__actions" data-wma-actions="true">';
+        echo '<button type="submit" class="button button-primary" name="' . $this->escape_attr( self::RESET_ACTION_FIELD ) . '" value="save">' . $this->escape_html( 'Save Changes' ) . '</button>';
+        echo '<button type="submit" class="button button-secondary wma-admin-menu__reset-button" name="' . $this->escape_attr( self::RESET_ACTION_FIELD ) . '" value="reset" data-wma-reset-button="true" data-wma-reset-confirm="' . $this->escape_attr( 'Reset all menu visibility and renaming changes?' ) . '">' . $this->escape_html( 'Reset to Defaults' ) . '</button>';
+
+        if ( '' !== $back_url ) {
+            echo '<a class="button button-secondary wma-admin-menu__back-link" href="' . $this->escape_url( $back_url ) . '">' . $this->escape_html( 'Back to Settings' ) . '</a>';
         }
 
+        echo '</div>';
+        echo '<p class="description wma-admin-menu__reset-description">' . $this->escape_html( $reset_message ) . '</p>';
         echo '</form>';
         echo '</div>';
+    }
+
+    /**
+     * Handle reset submissions originating from the settings form.
+     */
+    public function handle_reset_request() {
+        $method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET';
+
+        if ( 'POST' !== $method ) {
+            return;
+        }
+
+        if ( ! isset( $_POST[ self::RESET_ACTION_FIELD ] ) ) {
+            return;
+        }
+
+        $action = is_array( $_POST[ self::RESET_ACTION_FIELD ] ) ? '' : strtolower( trim( (string) $_POST[ self::RESET_ACTION_FIELD ] ) );
+
+        if ( 'reset' !== $action ) {
+            return;
+        }
+
+        if ( function_exists( 'current_user_can' ) && ! current_user_can( self::SETTINGS_CAPABILITY ) ) {
+            return;
+        }
+
+        if ( function_exists( 'check_admin_referer' ) ) {
+            check_admin_referer( self::OPTION_GROUP . '-options' );
+        }
+
+        foreach ( $this->get_option_names_for_reset() as $option_name ) {
+            $this->reset_option_value( $option_name );
+            $_POST[ $option_name ]    = [];
+            $_REQUEST[ $option_name ] = [];
+        }
+
+        $this->preserve_reset_notice();
+
+        if ( function_exists( 'add_settings_error' ) ) {
+            add_settings_error(
+                'wma-admin-menu-reset',
+                'wma_admin_menu_reset',
+                'WMA Admin Menu settings reset to defaults.',
+                'updated'
+            );
+        }
+    }
+
+    /**
+     * Retrieve the Settings screen URL used by the back control.
+     *
+     * @return string
+     */
+    private function get_settings_back_link() {
+        $url = function_exists( 'admin_url' ) ? admin_url( 'options-general.php' ) : 'options-general.php';
+
+        $filtered = apply_filters( 'wma_admin_menu_back_link', $url );
+
+        return is_string( $filtered ) ? $filtered : $url;
+    }
+
+    /**
+     * List option names that should be cleared during a reset.
+     *
+     * @return array
+     */
+    private function get_option_names_for_reset() {
+        $options = [
+            self::OPTION_HIDDEN_MENUS,
+            self::OPTION_HIDDEN_SUBMENUS,
+        ];
+
+        $extra = apply_filters( 'wma_admin_menu_reset_options', [] );
+
+        if ( is_array( $extra ) ) {
+            foreach ( $extra as $option ) {
+                if ( is_string( $option ) && '' !== $option ) {
+                    $options[] = $option;
+                }
+            }
+        }
+
+        return array_values( array_unique( $options ) );
+    }
+
+    /**
+     * Remove the stored value for a specific option when resetting.
+     *
+     * @param string $option_name Option key.
+     */
+    private function reset_option_value( $option_name ) {
+        $option_name = trim( (string) $option_name );
+
+        if ( '' === $option_name ) {
+            return;
+        }
+
+        $deleted = false;
+
+        if ( function_exists( 'delete_option' ) ) {
+            $deleted = delete_option( $option_name );
+        }
+
+        if ( ( ! $deleted ) && function_exists( 'update_option' ) ) {
+            update_option( $option_name, [] );
+        }
+    }
+
+    /**
+     * Ensure the reset confirmation survives the default WordPress redirect.
+     */
+    private function preserve_reset_notice() {
+        if ( empty( $_POST['_wp_http_referer'] ) ) {
+            return;
+        }
+
+        $referer = (string) $_POST['_wp_http_referer'];
+        $referer = $this->add_query_arg_to_url( self::RESET_QUERY_ARG, '1', $referer );
+
+        $_POST['_wp_http_referer']    = $referer;
+        $_REQUEST['_wp_http_referer'] = $referer;
+    }
+
+    /**
+     * Append a query arg to a URL using WordPress helpers when available.
+     *
+     * @param string $key   Query key.
+     * @param string $value Query value.
+     * @param string $url   Base URL.
+     * @return string
+     */
+    private function add_query_arg_to_url( $key, $value, $url ) {
+        $url = (string) $url;
+
+        if ( '' === $url ) {
+            return $url;
+        }
+
+        if ( function_exists( 'add_query_arg' ) ) {
+            return add_query_arg( $key, $value, $url );
+        }
+
+        $separator = false === strpos( $url, '?' ) ? '?' : '&';
+
+        return $url . $separator . rawurlencode( (string) $key ) . '=' . rawurlencode( (string) $value );
+    }
+
+    /**
+     * Escape URLs safely when WordPress helpers are unavailable.
+     *
+     * @param string $url Raw URL.
+     * @return string
+     */
+    private function escape_url( $url ) {
+        if ( function_exists( 'esc_url' ) ) {
+            return esc_url( $url );
+        }
+
+        return filter_var( (string) $url, FILTER_SANITIZE_URL );
     }
 
     /**
