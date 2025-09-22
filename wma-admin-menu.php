@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WMA Admin Menu
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: Wan Mohd Aiman Binawebpro.com
  */
 
@@ -23,6 +23,13 @@ class WMA_Admin_Menu {
     private const SETTINGS_PAGE_SLUG     = 'wma-admin-menu';
     private const SETTINGS_CAPABILITY    = 'manage_options';
     private const SETTINGS_PAGE_TITLE    = 'WMA Admin Menu';
+
+    /**
+     * Tracks whether a fallback menu has been registered for the settings page.
+     *
+     * @var bool
+     */
+    private $fallback_menu_registered = false;
 
     public function __construct() {
         add_action( 'admin_init', [ $this, 'register_settings' ] );
@@ -96,6 +103,14 @@ class WMA_Admin_Menu {
      * Register the plugin settings page within the Settings menu.
      */
     public function add_settings_page() {
+        $this->fallback_menu_registered = false;
+
+        $hidden_menus = $this->collect_hidden_menu_slugs( $this->get_hidden_menu_slugs() );
+
+        if ( in_array( 'options-general.php', $hidden_menus, true ) && $this->register_fallback_menu() ) {
+            return;
+        }
+
         if ( ! function_exists( 'add_options_page' ) ) {
             return;
         }
@@ -178,20 +193,104 @@ class WMA_Admin_Menu {
      * @param array $stored_hidden Menu slugs stored via the settings page.
      */
     private function hide_menus( array &$menu, array $stored_hidden = [] ) {
-        $filtered = apply_filters( 'wma_admin_hidden_menus', [] );
-        $filtered = is_array( $filtered ) ? $filtered : [];
-
-        $to_hide = $this->normalize_slugs( array_merge( $stored_hidden, $filtered ) );
+        $to_hide = $this->collect_hidden_menu_slugs( $stored_hidden );
 
         if ( empty( $to_hide ) ) {
             return;
         }
 
         foreach ( $menu as $index => $data ) {
-            if ( isset( $data[2] ) && in_array( $data[2], $to_hide, true ) ) {
-                unset( $menu[ $index ] );
+            if ( empty( $data[2] ) ) {
+                continue;
+            }
+
+            $slug = $data[2];
+
+            if ( ! in_array( $slug, $to_hide, true ) ) {
+                continue;
+            }
+
+            if ( $this->should_preserve_settings_menu( $slug ) ) {
+                continue;
+            }
+
+            unset( $menu[ $index ] );
+        }
+    }
+
+    /**
+     * Combine stored and filtered menu slugs targeted for removal.
+     *
+     * @param array $stored_hidden Menu slugs stored via the settings page.
+     * @return array
+     */
+    private function collect_hidden_menu_slugs( array $stored_hidden = [] ) {
+        $filtered = apply_filters( 'wma_admin_hidden_menus', [] );
+        $filtered = is_array( $filtered ) ? $filtered : [];
+
+        return $this->normalize_slugs( array_merge( $stored_hidden, $filtered ) );
+    }
+
+    /**
+     * Determine whether the Settings menu should remain visible to expose the plugin page.
+     *
+     * @param string $slug Menu slug being evaluated.
+     * @return bool
+     */
+    private function should_preserve_settings_menu( $slug ) {
+        if ( 'options-general.php' !== $slug ) {
+            return false;
+        }
+
+        if ( $this->fallback_menu_registered ) {
+            return false;
+        }
+
+        return $this->is_plugin_settings_submenu_under_settings();
+    }
+
+    /**
+     * Check whether the plugin settings page is currently registered beneath Settings.
+     *
+     * @return bool
+     */
+    private function is_plugin_settings_submenu_under_settings() {
+        global $submenu;
+
+        if ( ! isset( $submenu['options-general.php'] ) || ! is_array( $submenu['options-general.php'] ) ) {
+            return false;
+        }
+
+        foreach ( $submenu['options-general.php'] as $item ) {
+            if ( isset( $item[2] ) && self::SETTINGS_PAGE_SLUG === $item[2] ) {
+                return true;
             }
         }
+
+        return false;
+    }
+
+    /**
+     * Register a fallback top-level menu to ensure the settings screen remains accessible.
+     *
+     * @return bool True when the fallback menu is registered.
+     */
+    private function register_fallback_menu() {
+        if ( ! function_exists( 'add_menu_page' ) ) {
+            return false;
+        }
+
+        add_menu_page(
+            self::SETTINGS_PAGE_TITLE,
+            self::SETTINGS_PAGE_TITLE,
+            self::SETTINGS_CAPABILITY,
+            self::SETTINGS_PAGE_SLUG,
+            [ $this, 'render_settings_page' ]
+        );
+
+        $this->fallback_menu_registered = true;
+
+        return true;
     }
 
     /**
