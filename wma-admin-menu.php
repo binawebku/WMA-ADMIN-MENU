@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WMA Admin Menu
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Wan Mohd Aiman Binawebpro.com
  * Author URI: https://binawebpro.com
  */
@@ -18,10 +18,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class WMA_Admin_Menu {
 
-    private const VERSION                = '1.0.2';
+    private const VERSION                = '1.0.3';
     private const OPTION_GROUP           = 'wma_admin_menu';
     private const OPTION_HIDDEN_MENUS    = 'wma_admin_hidden_menus';
     private const OPTION_HIDDEN_SUBMENUS = 'wma_admin_hidden_submenus';
+    private const OPTION_MENU_LABELS     = 'wma_admin_menu_labels';
+    private const OPTION_SUBMENU_LABELS  = 'wma_admin_submenu_labels';
     private const SETTINGS_PAGE_SLUG     = 'wma-admin-menu';
     private const SETTINGS_CAPABILITY    = 'manage_options';
     private const SETTINGS_PAGE_TITLE    = 'WMA Admin Menu';
@@ -65,6 +67,26 @@ class WMA_Admin_Menu {
                 'type'              => 'array',
                 'default'           => [],
                 'sanitize_callback' => [ $this, 'sanitize_checkbox_values' ],
+            ]
+        );
+
+        register_setting(
+            self::OPTION_GROUP,
+            self::OPTION_MENU_LABELS,
+            [
+                'type'              => 'array',
+                'default'           => [],
+                'sanitize_callback' => [ $this, 'sanitize_menu_label_map' ],
+            ]
+        );
+
+        register_setting(
+            self::OPTION_GROUP,
+            self::OPTION_SUBMENU_LABELS,
+            [
+                'type'              => 'array',
+                'default'           => [],
+                'sanitize_callback' => [ $this, 'sanitize_submenu_label_map' ],
             ]
         );
 
@@ -255,6 +277,8 @@ class WMA_Admin_Menu {
 
         $this->hide_submenus( $submenu, $hidden_submenus );
         $this->reorder_submenus( $submenu );
+
+        $this->apply_menu_label_overrides( $menu, $submenu );
     }
 
     /**
@@ -462,33 +486,141 @@ class WMA_Admin_Menu {
     }
 
     /**
+     * Apply stored label overrides to the menu and submenu structures.
+     *
+     * @param array $menu    Global menu array passed by reference.
+     * @param array $submenu Global submenu array passed by reference.
+     */
+    private function apply_menu_label_overrides( array &$menu, array &$submenu ) {
+        $menu_labels    = $this->get_menu_label_overrides();
+        $submenu_labels = $this->get_submenu_label_overrides();
+
+        if ( ! empty( $menu_labels ) && is_array( $menu ) ) {
+            foreach ( $menu as $index => $data ) {
+                if ( ! isset( $data[2] ) ) {
+                    continue;
+                }
+
+                $slug = $data[2];
+
+                if ( isset( $menu_labels[ $slug ] ) && '' !== $menu_labels[ $slug ] ) {
+                    $menu[ $index ][0] = $menu_labels[ $slug ];
+                }
+            }
+        }
+
+        if ( ! empty( $submenu_labels ) && is_array( $submenu ) ) {
+            foreach ( $submenu_labels as $parent_slug => $children ) {
+                if ( ! isset( $submenu[ $parent_slug ] ) || ! is_array( $children ) ) {
+                    continue;
+                }
+
+                foreach ( $submenu[ $parent_slug ] as $child_index => $child_data ) {
+                    if ( ! isset( $child_data[2] ) ) {
+                        continue;
+                    }
+
+                    $child_slug = $child_data[2];
+
+                    if ( isset( $children[ $child_slug ] ) && '' !== $children[ $child_slug ] ) {
+                        $submenu[ $parent_slug ][ $child_index ][0] = $children[ $child_slug ];
+                    }
+                }
+            }
+        }
+
+        $this->apply_fallback_menu_labels( $menu, $submenu, $menu_labels );
+    }
+
+    /**
+     * Synchronize fallback menu titles with rename overrides.
+     *
+     * @param array $menu         Global menu array passed by reference.
+     * @param array $submenu      Global submenu array passed by reference.
+     * @param array $menu_labels  Stored menu label overrides.
+     */
+    private function apply_fallback_menu_labels( array &$menu, array &$submenu, array $menu_labels ) {
+        if ( ! $this->fallback_menu_registered ) {
+            return;
+        }
+
+        $fallback_label = '';
+
+        if ( isset( $menu_labels[ self::SETTINGS_PAGE_SLUG ] ) && '' !== $menu_labels[ self::SETTINGS_PAGE_SLUG ] ) {
+            $fallback_label = $menu_labels[ self::SETTINGS_PAGE_SLUG ];
+        } elseif ( isset( $menu_labels['options-general.php'] ) && '' !== $menu_labels['options-general.php'] ) {
+            $fallback_label = $menu_labels['options-general.php'];
+        }
+
+        if ( '' === $fallback_label ) {
+            return;
+        }
+
+        if ( is_array( $menu ) ) {
+            foreach ( $menu as $index => $data ) {
+                if ( isset( $data[2] ) && self::SETTINGS_PAGE_SLUG === $data[2] ) {
+                    $menu[ $index ][0] = $fallback_label;
+                }
+            }
+        }
+
+        if ( isset( $submenu[ self::SETTINGS_PAGE_SLUG ] ) && is_array( $submenu[ self::SETTINGS_PAGE_SLUG ] ) ) {
+            foreach ( $submenu[ self::SETTINGS_PAGE_SLUG ] as $child_index => $child_data ) {
+                if ( isset( $child_data[2] ) && self::SETTINGS_PAGE_SLUG === $child_data[2] ) {
+                    $submenu[ self::SETTINGS_PAGE_SLUG ][ $child_index ][0] = $fallback_label;
+                }
+            }
+        }
+    }
+
+    /**
      * Render checkbox controls for top-level menus.
      */
     private function render_menu_checkboxes() {
-        $menu_items    = $this->get_menu_items();
-        $checked_items = $this->get_option_array( self::OPTION_HIDDEN_MENUS );
+        $menu_items     = $this->get_menu_items();
+        $checked_items  = $this->get_option_array( self::OPTION_HIDDEN_MENUS );
 
         if ( empty( $menu_items ) ) {
             echo '<p>' . $this->escape_html( 'No top-level menus are available.' ) . '</p>';
             return;
         }
 
-        echo '<fieldset class="wma-admin-menu__checkbox-group">';
+        echo '<div class="wma-admin-menu__menu-group" data-wma-menu-group="true">';
 
-        foreach ( $menu_items as $slug => $label ) {
-            $is_checked = in_array( $slug, $checked_items, true ) ? ' checked="checked"' : '';
-            echo '<label class="wma-admin-menu__menu-item"><input type="checkbox" name="' . $this->escape_attr( self::OPTION_HIDDEN_MENUS ) . '[]" value="' . $this->escape_attr( $slug ) . '"' . $is_checked . ' /> <span>' . $this->escape_html( $label ) . '</span></label>';
+        foreach ( $menu_items as $slug => $data ) {
+            $label          = isset( $data['label'] ) ? $data['label'] : $slug;
+            $original_label = isset( $data['original_label'] ) ? $data['original_label'] : $label;
+            $custom_label   = isset( $data['custom_label'] ) ? $data['custom_label'] : '';
+
+            $is_checked  = in_array( $slug, $checked_items, true ) ? ' checked="checked"' : '';
+            $row_classes = 'wma-admin-menu__menu-row' . ( '' !== $custom_label ? ' has-custom-label' : '' );
+            $checkbox_id = 'wma-admin-menu-toggle-' . md5( $slug );
+            $input_id    = 'wma-admin-menu-label-' . md5( 'label-' . $slug );
+
+            echo '<div class="' . $this->escape_attr( $row_classes ) . '">';
+            echo '<div class="wma-admin-menu__menu-primary">';
+            echo '<input type="checkbox" id="' . $this->escape_attr( $checkbox_id ) . '" name="' . $this->escape_attr( self::OPTION_HIDDEN_MENUS ) . '[]" value="' . $this->escape_attr( $slug ) . '"' . $is_checked . ' />';
+            echo '<label for="' . $this->escape_attr( $checkbox_id ) . '" class="wma-admin-menu__menu-name">' . $this->escape_html( $label ) . '</label>';
+            echo '</div>';
+
+            echo '<div class="wma-admin-menu__menu-rename">';
+            echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $input_id ) . '">';
+            echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $original_label ) . '</span>';
+            echo '</label>';
+            echo '<input type="text" id="' . $this->escape_attr( $input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_MENU_LABELS ) . '[' . $this->escape_attr( $slug ) . ']" value="' . $this->escape_attr( $custom_label ) . '" placeholder="' . $this->escape_attr( $original_label ) . '" />';
+            echo '</div>';
+            echo '</div>';
         }
 
-        echo '</fieldset>';
+        echo '</div>';
     }
 
     /**
      * Render checkbox controls for submenu items.
      */
     private function render_submenu_checkboxes() {
-        $submenu_items = $this->get_submenu_items();
-        $checked_items = $this->get_option_array( self::OPTION_HIDDEN_SUBMENUS );
+        $submenu_items       = $this->get_submenu_items();
+        $checked_items       = $this->get_option_array( self::OPTION_HIDDEN_SUBMENUS );
 
         if ( empty( $submenu_items ) ) {
             echo '<p>' . $this->escape_html( 'No submenu items are available.' ) . '</p>';
@@ -498,31 +630,79 @@ class WMA_Admin_Menu {
         echo '<div class="wma-admin-menu__submenu-group" data-wma-submenu-group="true">';
 
         foreach ( $submenu_items as $parent_slug => $data ) {
-            $items        = isset( $data['items'] ) ? $data['items'] : [];
-            $parent_label = isset( $data['parent_label'] ) ? $data['parent_label'] : $parent_slug;
+            $items                 = isset( $data['items'] ) ? $data['items'] : [];
+            $parent_label          = isset( $data['parent_label'] ) ? $data['parent_label'] : $parent_slug;
+            $parent_original_label = isset( $data['parent_original_label'] ) ? $data['parent_original_label'] : $parent_label;
+            $parent_custom_label   = isset( $data['parent_custom_label'] ) ? $data['parent_custom_label'] : '';
 
             if ( empty( $items ) ) {
                 continue;
             }
 
-            $is_expanded     = $this->has_checked_submenu( $parent_slug, $checked_items );
-            $row_classes     = 'wma-admin-menu__submenu-row' . ( $is_expanded ? ' is-open' : '' );
+            $has_checked_submenu = $this->has_checked_submenu( $parent_slug, $checked_items );
+            $has_custom_child    = false;
+
+            foreach ( $items as $item_data ) {
+                if ( isset( $item_data['custom_label'] ) && '' !== $item_data['custom_label'] ) {
+                    $has_custom_child = true;
+                    break;
+                }
+            }
+
+            $should_expand = $has_checked_submenu || $has_custom_child || '' !== $parent_custom_label;
+            $row_classes   = 'wma-admin-menu__submenu-row';
+
+            if ( $should_expand ) {
+                $row_classes .= ' is-open';
+            }
+
+            if ( $has_custom_child || '' !== $parent_custom_label ) {
+                $row_classes .= ' has-custom-label';
+            }
             $container_id    = 'wma-admin-menu-submenu-' . md5( $parent_slug );
-            $expanded_attr   = $is_expanded ? 'true' : 'false';
-            $aria_hidden_attr = $is_expanded ? 'false' : 'true';
+            $expanded_attr   = $should_expand ? 'true' : 'false';
+            $aria_hidden_attr = $should_expand ? 'false' : 'true';
 
             echo '<div class="' . $this->escape_attr( $row_classes ) . '" data-wma-submenu-row="true">';
+            echo '<div class="wma-admin-menu__submenu-header">';
             echo '<button type="button" class="wma-admin-menu__submenu-toggle" aria-expanded="' . $this->escape_attr( $expanded_attr ) . '" aria-controls="' . $this->escape_attr( $container_id ) . '">';
             echo '<span class="wma-admin-menu__submenu-title">' . $this->escape_html( $parent_label ) . '</span>';
             echo '<span class="wma-admin-menu__submenu-icon" aria-hidden="true"></span>';
             echo '</button>';
+            echo '<div class="wma-admin-menu__submenu-parent-field">';
+            $parent_input_id = 'wma-admin-menu-parent-label-' . md5( 'parent-' . $parent_slug );
+            echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $parent_input_id ) . '">';
+            echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $parent_original_label ) . '</span>';
+            echo '</label>';
+            echo '<input type="text" id="' . $this->escape_attr( $parent_input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_MENU_LABELS ) . '[' . $this->escape_attr( $parent_slug ) . ']" value="' . $this->escape_attr( $parent_custom_label ) . '" placeholder="' . $this->escape_attr( $parent_original_label ) . '" />';
+            echo '</div>';
+            echo '</div>';
 
             echo '<div id="' . $this->escape_attr( $container_id ) . '" class="wma-admin-menu__submenu-items" aria-hidden="' . $this->escape_attr( $aria_hidden_attr ) . '">';
 
-            foreach ( $items as $slug => $label ) {
-                $value      = $parent_slug . '|' . $slug;
-                $is_checked = in_array( $value, $checked_items, true ) ? ' checked="checked"' : '';
-                echo '<label class="wma-admin-menu__submenu-item"><input type="checkbox" name="' . $this->escape_attr( self::OPTION_HIDDEN_SUBMENUS ) . '[]" value="' . $this->escape_attr( $value ) . '"' . $is_checked . ' /> <span>' . $this->escape_html( $label ) . '</span></label>';
+            foreach ( $items as $slug => $item_data ) {
+                $child_label          = isset( $item_data['label'] ) ? $item_data['label'] : $slug;
+                $child_original_label = isset( $item_data['original_label'] ) ? $item_data['original_label'] : $child_label;
+                $child_custom_label   = isset( $item_data['custom_label'] ) ? $item_data['custom_label'] : '';
+
+                $value        = $parent_slug . '|' . $slug;
+                $is_checked   = in_array( $value, $checked_items, true ) ? ' checked="checked"' : '';
+                $child_row_id = 'wma-admin-menu-submenu-checkbox-' . md5( $value );
+                $child_input_id = 'wma-admin-menu-submenu-label-' . md5( 'label-' . $value );
+                $child_row_classes = 'wma-admin-menu__submenu-item' . ( '' !== $child_custom_label ? ' has-custom-label' : '' );
+
+                echo '<div class="' . $this->escape_attr( $child_row_classes ) . '">';
+                echo '<div class="wma-admin-menu__submenu-item-primary">';
+                echo '<input type="checkbox" id="' . $this->escape_attr( $child_row_id ) . '" name="' . $this->escape_attr( self::OPTION_HIDDEN_SUBMENUS ) . '[]" value="' . $this->escape_attr( $value ) . '"' . $is_checked . ' />';
+                echo '<label for="' . $this->escape_attr( $child_row_id ) . '" class="wma-admin-menu__submenu-name">' . $this->escape_html( $child_label ) . '</label>';
+                echo '</div>';
+                echo '<div class="wma-admin-menu__submenu-item-field">';
+                echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $child_input_id ) . '">';
+                echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $child_original_label ) . '</span>';
+                echo '</label>';
+                echo '<input type="text" id="' . $this->escape_attr( $child_input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_SUBMENU_LABELS ) . '[' . $this->escape_attr( $parent_slug ) . '][' . $this->escape_attr( $slug ) . ']" value="' . $this->escape_attr( $child_custom_label ) . '" placeholder="' . $this->escape_attr( $child_original_label ) . '" />';
+                echo '</div>';
+                echo '</div>';
             }
 
             echo '</div>';
@@ -549,6 +729,36 @@ class WMA_Admin_Menu {
     }
 
     /**
+     * Retrieve stored top-level menu label overrides.
+     *
+     * @return array
+     */
+    private function get_menu_label_overrides() {
+        if ( function_exists( 'get_option' ) ) {
+            $value = get_option( self::OPTION_MENU_LABELS, [] );
+        } else {
+            $value = [];
+        }
+
+        return $this->sanitize_menu_label_map( $value );
+    }
+
+    /**
+     * Retrieve stored submenu label overrides.
+     *
+     * @return array
+     */
+    private function get_submenu_label_overrides() {
+        if ( function_exists( 'get_option' ) ) {
+            $value = get_option( self::OPTION_SUBMENU_LABELS, [] );
+        } else {
+            $value = [];
+        }
+
+        return $this->sanitize_submenu_label_map( $value );
+    }
+
+    /**
      * Fetch menu items from the global menu array, ensuring stored selections remain visible.
      *
      * @return array
@@ -556,7 +766,8 @@ class WMA_Admin_Menu {
     private function get_menu_items() {
         global $menu;
 
-        $items = [];
+        $items          = [];
+        $label_overrides = $this->get_menu_label_overrides();
 
         if ( is_array( $menu ) ) {
             foreach ( $menu as $data ) {
@@ -564,9 +775,17 @@ class WMA_Admin_Menu {
                     continue;
                 }
 
-                $slug  = $data[2];
-                $label = isset( $data[0] ) ? $this->prepare_menu_label( $data[0] ) : $slug;
-                $items[ $slug ] = $label;
+                $slug            = $data[2];
+                $original_label  = isset( $data[0] ) ? $this->prepare_menu_label( $data[0] ) : '';
+                $original_label  = '' !== $original_label ? $original_label : $this->generate_fallback_label( $slug );
+                $custom_label    = isset( $label_overrides[ $slug ] ) ? $label_overrides[ $slug ] : '';
+                $display_label   = '' !== $custom_label ? $custom_label : $original_label;
+
+                $items[ $slug ] = [
+                    'label'          => $display_label,
+                    'original_label' => $original_label,
+                    'custom_label'   => $custom_label,
+                ];
             }
         }
 
@@ -575,7 +794,33 @@ class WMA_Admin_Menu {
                 continue;
             }
 
-            $items[ $slug ] = $this->generate_fallback_label( $slug );
+            $original_label = $this->generate_fallback_label( $slug );
+            $custom_label   = isset( $label_overrides[ $slug ] ) ? $label_overrides[ $slug ] : '';
+            $display_label  = '' !== $custom_label ? $custom_label : $original_label;
+
+            $items[ $slug ] = [
+                'label'          => $display_label,
+                'original_label' => $original_label,
+                'custom_label'   => $custom_label,
+            ];
+        }
+
+        foreach ( $label_overrides as $slug => $custom_label ) {
+            if ( '' === $custom_label ) {
+                continue;
+            }
+
+            if ( isset( $items[ $slug ] ) ) {
+                $items[ $slug ]['label']        = $custom_label;
+                $items[ $slug ]['custom_label'] = $custom_label;
+                continue;
+            }
+
+            $items[ $slug ] = [
+                'label'          => $custom_label,
+                'original_label' => $this->generate_fallback_label( $slug ),
+                'custom_label'   => $custom_label,
+            ];
         }
 
         return $items;
@@ -589,8 +834,10 @@ class WMA_Admin_Menu {
     private function get_submenu_items() {
         global $submenu;
 
-        $items       = [];
-        $menu_labels = $this->get_menu_items();
+        $items                = [];
+        $menu_items           = $this->get_menu_items();
+        $menu_label_overrides = $this->get_menu_label_overrides();
+        $submenu_overrides    = $this->get_submenu_label_overrides();
 
         if ( is_array( $submenu ) ) {
             foreach ( $submenu as $parent_slug => $children ) {
@@ -603,17 +850,30 @@ class WMA_Admin_Menu {
                         continue;
                     }
 
-                    $child_slug  = $child[2];
-                    $child_label = isset( $child[0] ) ? $this->prepare_menu_label( $child[0] ) : $child_slug;
+                    $child_slug          = $child[2];
+                    $original_child      = isset( $child[0] ) ? $this->prepare_menu_label( $child[0] ) : '';
+                    $original_child      = '' !== $original_child ? $original_child : $this->generate_fallback_label( $child_slug );
+                    $custom_child        = isset( $submenu_overrides[ $parent_slug ][ $child_slug ] ) ? $submenu_overrides[ $parent_slug ][ $child_slug ] : '';
+                    $display_child       = '' !== $custom_child ? $custom_child : $original_child;
 
                     if ( ! isset( $items[ $parent_slug ] ) ) {
+                        $parent_original = isset( $menu_items[ $parent_slug ] ) ? $menu_items[ $parent_slug ]['original_label'] : $this->generate_fallback_label( $parent_slug );
+                        $parent_custom   = isset( $menu_label_overrides[ $parent_slug ] ) ? $menu_label_overrides[ $parent_slug ] : '';
+                        $parent_display  = '' !== $parent_custom ? $parent_custom : $parent_original;
+
                         $items[ $parent_slug ] = [
-                            'parent_label' => isset( $menu_labels[ $parent_slug ] ) ? $menu_labels[ $parent_slug ] : $this->generate_fallback_label( $parent_slug ),
-                            'items'        => [],
+                            'parent_label'          => $parent_display,
+                            'parent_original_label' => $parent_original,
+                            'parent_custom_label'   => $parent_custom,
+                            'items'                 => [],
                         ];
                     }
 
-                    $items[ $parent_slug ]['items'][ $child_slug ] = $child_label;
+                    $items[ $parent_slug ]['items'][ $child_slug ] = [
+                        'label'          => $display_child,
+                        'original_label' => $original_child,
+                        'custom_label'   => $custom_child,
+                    ];
                 }
             }
         }
@@ -623,14 +883,61 @@ class WMA_Admin_Menu {
             $child_slug  = $item['submenu'];
 
             if ( ! isset( $items[ $parent_slug ] ) ) {
+                $parent_original = isset( $menu_items[ $parent_slug ] ) ? $menu_items[ $parent_slug ]['original_label'] : $this->generate_fallback_label( $parent_slug );
+                $parent_custom   = isset( $menu_label_overrides[ $parent_slug ] ) ? $menu_label_overrides[ $parent_slug ] : '';
+                $parent_display  = '' !== $parent_custom ? $parent_custom : $parent_original;
+
                 $items[ $parent_slug ] = [
-                    'parent_label' => $this->generate_fallback_label( $parent_slug ),
-                    'items'        => [],
+                    'parent_label'          => $parent_display,
+                    'parent_original_label' => $parent_original,
+                    'parent_custom_label'   => $parent_custom,
+                    'items'                 => [],
                 ];
             }
 
             if ( ! isset( $items[ $parent_slug ]['items'][ $child_slug ] ) ) {
-                $items[ $parent_slug ]['items'][ $child_slug ] = $this->generate_fallback_label( $child_slug );
+                $original_child = $this->generate_fallback_label( $child_slug );
+                $custom_child   = isset( $submenu_overrides[ $parent_slug ][ $child_slug ] ) ? $submenu_overrides[ $parent_slug ][ $child_slug ] : '';
+                $display_child  = '' !== $custom_child ? $custom_child : $original_child;
+
+                $items[ $parent_slug ]['items'][ $child_slug ] = [
+                    'label'          => $display_child,
+                    'original_label' => $original_child,
+                    'custom_label'   => $custom_child,
+                ];
+            }
+        }
+
+        foreach ( $submenu_overrides as $parent_slug => $children ) {
+            if ( ! is_array( $children ) ) {
+                continue;
+            }
+
+            if ( ! isset( $items[ $parent_slug ] ) ) {
+                $parent_original = isset( $menu_items[ $parent_slug ] ) ? $menu_items[ $parent_slug ]['original_label'] : $this->generate_fallback_label( $parent_slug );
+                $parent_custom   = isset( $menu_label_overrides[ $parent_slug ] ) ? $menu_label_overrides[ $parent_slug ] : '';
+                $parent_display  = '' !== $parent_custom ? $parent_custom : $parent_original;
+
+                $items[ $parent_slug ] = [
+                    'parent_label'          => $parent_display,
+                    'parent_original_label' => $parent_original,
+                    'parent_custom_label'   => $parent_custom,
+                    'items'                 => [],
+                ];
+            }
+
+            foreach ( $children as $child_slug => $custom_child ) {
+                if ( isset( $items[ $parent_slug ]['items'][ $child_slug ] ) ) {
+                    $items[ $parent_slug ]['items'][ $child_slug ]['label']        = $custom_child;
+                    $items[ $parent_slug ]['items'][ $child_slug ]['custom_label'] = $custom_child;
+                    continue;
+                }
+
+                $items[ $parent_slug ]['items'][ $child_slug ] = [
+                    'label'          => $custom_child,
+                    'original_label' => $this->generate_fallback_label( $child_slug ),
+                    'custom_label'   => $custom_child,
+                ];
             }
         }
 
@@ -811,6 +1118,114 @@ class WMA_Admin_Menu {
         }
 
         return array_values( array_unique( $sanitized ) );
+    }
+
+    /**
+     * Sanitize menu label overrides stored via settings.
+     *
+     * @param mixed $values Raw input values.
+     * @return array
+     */
+    public function sanitize_menu_label_map( $values ) {
+        if ( ! is_array( $values ) ) {
+            return [];
+        }
+
+        $sanitized = [];
+
+        foreach ( $values as $slug => $label ) {
+            if ( is_array( $label ) ) {
+                continue;
+            }
+
+            $slug = trim( (string) $slug );
+
+            if ( '' === $slug ) {
+                continue;
+            }
+
+            $label = $this->sanitize_label_value( $label );
+
+            if ( '' === $label ) {
+                continue;
+            }
+
+            $sanitized[ $slug ] = $label;
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * Sanitize submenu label overrides stored via settings.
+     *
+     * @param mixed $values Raw input values.
+     * @return array
+     */
+    public function sanitize_submenu_label_map( $values ) {
+        if ( ! is_array( $values ) ) {
+            return [];
+        }
+
+        $sanitized = [];
+
+        foreach ( $values as $parent_slug => $children ) {
+            if ( ! is_array( $children ) ) {
+                continue;
+            }
+
+            $parent_slug = trim( (string) $parent_slug );
+
+            if ( '' === $parent_slug ) {
+                continue;
+            }
+
+            foreach ( $children as $child_slug => $label ) {
+                if ( is_array( $label ) ) {
+                    continue;
+                }
+
+                $child_slug = trim( (string) $child_slug );
+
+                if ( '' === $child_slug ) {
+                    continue;
+                }
+
+                $label = $this->sanitize_label_value( $label );
+
+                if ( '' === $label ) {
+                    continue;
+                }
+
+                if ( ! isset( $sanitized[ $parent_slug ] ) ) {
+                    $sanitized[ $parent_slug ] = [];
+                }
+
+                $sanitized[ $parent_slug ][ $child_slug ] = $label;
+            }
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * Normalize rename strings by trimming and stripping tags.
+     *
+     * @param mixed $label Raw rename value.
+     * @return string
+     */
+    private function sanitize_label_value( $label ) {
+        $label = is_scalar( $label ) ? (string) $label : '';
+
+        if ( function_exists( 'wp_strip_all_tags' ) ) {
+            $label = wp_strip_all_tags( $label );
+        } else {
+            $label = strip_tags( $label );
+        }
+
+        $label = preg_replace( '/\s+/u', ' ', $label );
+
+        return trim( (string) $label );
     }
 
     /**

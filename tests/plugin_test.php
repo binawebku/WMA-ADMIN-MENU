@@ -8,6 +8,8 @@ $actions = [];
 $options = [
     'wma_admin_hidden_menus'    => [],
     'wma_admin_hidden_submenus' => [],
+    'wma_admin_menu_labels'     => [],
+    'wma_admin_submenu_labels'  => [],
 ];
 
 function add_filter($tag, $callback, $priority = 10) {
@@ -125,6 +127,8 @@ $results = [];
 reset_admin_structures();
 set_test_option('wma_admin_hidden_menus', []);
 set_test_option('wma_admin_hidden_submenus', []);
+set_test_option('wma_admin_menu_labels', []);
+set_test_option('wma_admin_submenu_labels', []);
 
 do_action('admin_menu');
 
@@ -150,14 +154,47 @@ if (!isset($submenu['options-general.php']) || $submenu['options-general.php'] !
 }
 
 reset_admin_structures();
+set_test_option('wma_admin_hidden_menus', []);
+set_test_option('wma_admin_hidden_submenus', []);
+set_test_option('wma_admin_menu_labels', ['options-general.php' => 'Site Options']);
+set_test_option('wma_admin_submenu_labels', [
+    'options-general.php' => ['options-reading.php' => 'Reading Setup'],
+]);
+
+do_action('admin_menu');
+
+$expected_menu_renamed = [
+    ['Site Options', 'manage_options', 'options-general.php'],
+    ['Dashboard', 'read', 'index.php'],
+];
+
+$expected_submenu_renamed = [
+    ['Reading Setup', 'manage_options', 'options-reading.php'],
+    ['General', 'manage_options', 'options-general.php'],
+    ['WMA Admin Menu', 'manage_options', 'wma-admin-menu'],
+];
+
+if ($menu !== $expected_menu_renamed) {
+    $tests_passed = false;
+    $results['renamed_menu'] = $menu;
+}
+
+if (!isset($submenu['options-general.php']) || $submenu['options-general.php'] !== $expected_submenu_renamed) {
+    $tests_passed = false;
+    $results['renamed_submenu'] = isset($submenu['options-general.php']) ? $submenu['options-general.php'] : null;
+}
+
+reset_admin_structures();
 set_test_option('wma_admin_hidden_menus', ['options-general.php']);
 set_test_option('wma_admin_hidden_submenus', []);
+set_test_option('wma_admin_menu_labels', ['options-general.php' => 'Site Options']);
+set_test_option('wma_admin_submenu_labels', []);
 
 do_action('admin_menu');
 
 $expected_menu_hidden_settings = [
     ['Dashboard', 'read', 'index.php'],
-    ['WMA Admin Menu', 'manage_options', 'wma-admin-menu'],
+    ['Site Options', 'manage_options', 'wma-admin-menu'],
 ];
 
 if ($menu !== $expected_menu_hidden_settings) {
@@ -165,11 +202,16 @@ if ($menu !== $expected_menu_hidden_settings) {
     $results['hidden_settings_menu'] = $menu;
 }
 
-$fallback_accessible = isset($submenu['wma-admin-menu'][0][2]) && 'wma-admin-menu' === $submenu['wma-admin-menu'][0][2];
+
+$fallback_entry = isset($submenu['wma-admin-menu'][0]) ? $submenu['wma-admin-menu'][0] : null;
+$fallback_accessible = is_array($fallback_entry) && 'wma-admin-menu' === $fallback_entry[2];
 
 if (!$fallback_accessible) {
     $tests_passed = false;
     $results['fallback_submenu'] = isset($submenu['wma-admin-menu']) ? $submenu['wma-admin-menu'] : null;
+} elseif ('Site Options' !== $fallback_entry[0]) {
+    $tests_passed = false;
+    $results['fallback_label'] = $fallback_entry;
 }
 
 if ($tests_passed) {
