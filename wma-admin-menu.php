@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WMA Admin Menu
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: Wan Mohd Aiman Binawebpro.com
  */
 
@@ -17,6 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class WMA_Admin_Menu {
 
+    private const VERSION                = '1.0.2';
     private const OPTION_GROUP           = 'wma_admin_menu';
     private const OPTION_HIDDEN_MENUS    = 'wma_admin_hidden_menus';
     private const OPTION_HIDDEN_SUBMENUS = 'wma_admin_hidden_submenus';
@@ -28,6 +29,7 @@ class WMA_Admin_Menu {
         add_action( 'admin_init', [ $this, 'register_settings' ] );
         add_action( 'admin_menu', [ $this, 'add_settings_page' ], 998 );
         add_action( 'admin_menu', [ $this, 'modify_menus' ], 999 );
+        add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
     }
 
     /**
@@ -137,6 +139,74 @@ class WMA_Admin_Menu {
 
         echo '</form>';
         echo '</div>';
+    }
+
+    /**
+     * Enqueue JavaScript and CSS for the plugin settings page.
+     *
+     * @param string $hook_suffix Current admin page hook suffix.
+     */
+    public function enqueue_assets( $hook_suffix = '' ) {
+        $expected_hook = 'settings_page_' . self::SETTINGS_PAGE_SLUG;
+
+        if ( $expected_hook !== $hook_suffix ) {
+            return;
+        }
+
+        if ( ! function_exists( 'wp_enqueue_style' ) || ! function_exists( 'wp_enqueue_script' ) ) {
+            return;
+        }
+
+        if ( ! function_exists( 'plugins_url' ) ) {
+            return;
+        }
+
+        $style_url  = plugins_url( 'assets/admin-menu.css', __FILE__ );
+        $script_url = plugins_url( 'assets/admin-menu.js', __FILE__ );
+
+        wp_enqueue_style(
+            'wma-admin-menu',
+            $style_url,
+            [],
+            $this->get_asset_version( 'assets/admin-menu.css' )
+        );
+
+        wp_enqueue_script(
+            'wma-admin-menu',
+            $script_url,
+            [],
+            $this->get_asset_version( 'assets/admin-menu.js' ),
+            true
+        );
+    }
+
+    /**
+     * Determine whether a submenu parent contains any checked items.
+     *
+     * @param string $parent_slug Parent menu slug.
+     * @param array  $checked_items Checked submenu values.
+     * @return bool
+     */
+    private function has_checked_submenu( $parent_slug, array $checked_items ) {
+        $prefix = $parent_slug . '|';
+
+        foreach ( $checked_items as $value ) {
+            if ( is_array( $value ) ) {
+                continue;
+            }
+
+            $value = (string) $value;
+
+            if ( '' === $value ) {
+                continue;
+            }
+
+            if ( 0 === strpos( $value, $prefix ) ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -307,7 +377,7 @@ class WMA_Admin_Menu {
 
         foreach ( $menu_items as $slug => $label ) {
             $is_checked = in_array( $slug, $checked_items, true ) ? ' checked="checked"' : '';
-            echo '<label><input type="checkbox" name="' . $this->escape_attr( self::OPTION_HIDDEN_MENUS ) . '[]" value="' . $this->escape_attr( $slug ) . '"' . $is_checked . ' /> ' . $this->escape_html( $label ) . '</label><br />';
+            echo '<label class="wma-admin-menu__menu-item"><input type="checkbox" name="' . $this->escape_attr( self::OPTION_HIDDEN_MENUS ) . '[]" value="' . $this->escape_attr( $slug ) . '"' . $is_checked . ' /> <span>' . $this->escape_html( $label ) . '</span></label>';
         }
 
         echo '</fieldset>';
@@ -325,21 +395,38 @@ class WMA_Admin_Menu {
             return;
         }
 
-        echo '<div class="wma-admin-menu__submenu-group">';
+        echo '<div class="wma-admin-menu__submenu-group" data-wma-submenu-group="true">';
 
         foreach ( $submenu_items as $parent_slug => $data ) {
+            $items        = isset( $data['items'] ) ? $data['items'] : [];
             $parent_label = isset( $data['parent_label'] ) ? $data['parent_label'] : $parent_slug;
-            echo '<p><strong>' . $this->escape_html( $parent_label ) . '</strong></p>';
 
-            if ( empty( $data['items'] ) ) {
+            if ( empty( $items ) ) {
                 continue;
             }
 
-            foreach ( $data['items'] as $slug => $label ) {
+            $is_expanded     = $this->has_checked_submenu( $parent_slug, $checked_items );
+            $row_classes     = 'wma-admin-menu__submenu-row' . ( $is_expanded ? ' is-open' : '' );
+            $container_id    = 'wma-admin-menu-submenu-' . md5( $parent_slug );
+            $expanded_attr   = $is_expanded ? 'true' : 'false';
+            $aria_hidden_attr = $is_expanded ? 'false' : 'true';
+
+            echo '<div class="' . $this->escape_attr( $row_classes ) . '" data-wma-submenu-row="true">';
+            echo '<button type="button" class="wma-admin-menu__submenu-toggle" aria-expanded="' . $this->escape_attr( $expanded_attr ) . '" aria-controls="' . $this->escape_attr( $container_id ) . '">';
+            echo '<span class="wma-admin-menu__submenu-title">' . $this->escape_html( $parent_label ) . '</span>';
+            echo '<span class="wma-admin-menu__submenu-icon" aria-hidden="true"></span>';
+            echo '</button>';
+
+            echo '<div id="' . $this->escape_attr( $container_id ) . '" class="wma-admin-menu__submenu-items" aria-hidden="' . $this->escape_attr( $aria_hidden_attr ) . '">';
+
+            foreach ( $items as $slug => $label ) {
                 $value      = $parent_slug . '|' . $slug;
                 $is_checked = in_array( $value, $checked_items, true ) ? ' checked="checked"' : '';
-                echo '<label class="wma-admin-menu__submenu-item"><input type="checkbox" name="' . $this->escape_attr( self::OPTION_HIDDEN_SUBMENUS ) . '[]" value="' . $this->escape_attr( $value ) . '"' . $is_checked . ' /> ' . $this->escape_html( $label ) . '</label><br />';
+                echo '<label class="wma-admin-menu__submenu-item"><input type="checkbox" name="' . $this->escape_attr( self::OPTION_HIDDEN_SUBMENUS ) . '[]" value="' . $this->escape_attr( $value ) . '"' . $is_checked . ' /> <span>' . $this->escape_html( $label ) . '</span></label>';
             }
+
+            echo '</div>';
+            echo '</div>';
         }
 
         echo '</div>';
@@ -573,6 +660,27 @@ class WMA_Admin_Menu {
         }
 
         return $result;
+    }
+
+    /**
+     * Build a cache-busting version string for plugin assets.
+     *
+     * @param string $relative_path Asset path relative to the plugin root.
+     * @return string
+     */
+    private function get_asset_version( $relative_path ) {
+        $relative_path = ltrim( (string) $relative_path, '/' );
+        $path          = dirname( __FILE__ ) . '/' . $relative_path;
+
+        if ( file_exists( $path ) ) {
+            $mtime = filemtime( $path );
+
+            if ( false !== $mtime ) {
+                return (string) $mtime;
+            }
+        }
+
+        return self::VERSION;
     }
 
     /**
