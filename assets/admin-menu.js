@@ -107,9 +107,79 @@
         });
     };
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeToggleRows);
-    } else {
+    var dispatchEventSafe = function(element, type) {
+        if (!element || 'function' !== typeof element.dispatchEvent) {
+            return;
+        }
+
+        var event;
+
+        if ('function' === typeof window.Event) {
+            event = new Event(type, { bubbles: true });
+        } else {
+            event = document.createEvent('Event');
+            event.initEvent(type, true, true);
+        }
+
+        element.dispatchEvent(event);
+    };
+
+    var applyResetDefaults = function(form) {
+        var renameFields = form.querySelectorAll('[data-wma-rename-default]');
+
+        Array.prototype.forEach.call(renameFields, function(field) {
+            var defaultValue = field.getAttribute('data-wma-rename-default');
+
+            if (typeof defaultValue === 'string') {
+                field.value = defaultValue;
+                dispatchEventSafe(field, 'input');
+                dispatchEventSafe(field, 'change');
+            }
+        });
+
+        var checkboxes = form.querySelectorAll('input[type="checkbox"]');
+
+        Array.prototype.forEach.call(checkboxes, function(checkbox) {
+            checkbox.checked = false;
+        });
+    };
+
+    var initializeResetButton = function() {
+        var form = document.querySelector('[data-wma-settings-form="true"]');
+
+        if (!form) {
+            return;
+        }
+
+        var resetButton = form.querySelector('[data-wma-reset-button="true"]');
+
+        if (!resetButton) {
+            return;
+        }
+
+        resetButton.addEventListener('click', function(event) {
+            var confirmMessage = resetButton.getAttribute('data-wma-reset-confirm');
+
+            if (confirmMessage && !window.confirm(confirmMessage)) {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+
+            applyResetDefaults(form);
+
+            return true;
+        });
+    };
+
+    var initializeAdminMenuSettings = function() {
         initializeToggleRows();
+        initializeResetButton();
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeAdminMenuSettings);
+    } else {
+        initializeAdminMenuSettings();
     }
 })();
