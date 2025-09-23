@@ -168,6 +168,159 @@
         handleValueChange();
     };
 
+    var updateVisibilityState = function(checkbox) {
+        if (!checkbox) {
+            return;
+        }
+
+        var host = findClosest(checkbox, '.wma-admin-menu__menu-row');
+
+        if (!host) {
+            host = findClosest(checkbox, '.wma-admin-menu__submenu-item');
+        }
+
+        if (!host) {
+            return;
+        }
+
+        if (checkbox.checked) {
+            host.classList.add('is-hidden');
+        } else {
+            host.classList.remove('is-hidden');
+        }
+    };
+
+    var initializeVisibilityCheckboxes = function() {
+        var checkboxes = document.querySelectorAll('.wma-admin-menu__menu-primary input[type="checkbox"], .wma-admin-menu__submenu-item-primary input[type="checkbox"]');
+
+        if (!checkboxes.length) {
+            return;
+        }
+
+        Array.prototype.forEach.call(checkboxes, function(checkbox) {
+            checkbox.addEventListener('change', function() {
+                updateVisibilityState(checkbox);
+            });
+
+            updateVisibilityState(checkbox);
+        });
+    };
+
+    var initializeSortableLists = function() {
+        var lists = document.querySelectorAll('[data-wma-sortable-list]');
+
+        if (!lists.length) {
+            return;
+        }
+
+        var activeItem = null;
+        var pendingDragItem = null;
+
+        var clearPendingDrag = function() {
+            pendingDragItem = null;
+        };
+
+        var getDragAfterElement = function(container, y) {
+            var elements = container.querySelectorAll('[data-wma-sortable-item]:not(.is-dragging)');
+            var closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+
+            Array.prototype.forEach.call(elements, function(element) {
+                var box = element.getBoundingClientRect();
+                var offset = y - box.top - (box.height / 2);
+
+                if (offset < 0 && offset > closest.offset) {
+                    closest.offset = offset;
+                    closest.element = element;
+                }
+            });
+
+            return closest.element;
+        };
+
+        var handleDragStart = function(event) {
+            if (!pendingDragItem || pendingDragItem !== event.currentTarget) {
+                event.preventDefault();
+                pendingDragItem = null;
+                return;
+            }
+
+            activeItem = event.currentTarget;
+            pendingDragItem = null;
+            activeItem.classList.add('is-dragging');
+
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+
+                try {
+                    event.dataTransfer.setData('text/plain', '');
+                } catch (error) {
+                    // Some browsers (e.g., IE) may restrict setting data; ignore safely.
+                }
+            }
+        };
+
+        var handleDragEnd = function() {
+            if (activeItem) {
+                activeItem.classList.remove('is-dragging');
+                activeItem = null;
+            }
+
+            pendingDragItem = null;
+        };
+
+        Array.prototype.forEach.call(lists, function(list) {
+            var items = list.querySelectorAll('[data-wma-sortable-item]');
+
+            Array.prototype.forEach.call(items, function(item) {
+                item.setAttribute('draggable', 'true');
+
+                var handle = item.querySelector('[data-wma-drag-handle]');
+
+                if (handle) {
+                    var prepare = function() {
+                        pendingDragItem = item;
+                    };
+
+                    handle.addEventListener('mousedown', prepare);
+                    handle.addEventListener('touchstart', prepare);
+                }
+
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragend', handleDragEnd);
+            });
+
+            list.addEventListener('dragover', function(event) {
+                if (!activeItem) {
+                    return;
+                }
+
+                event.preventDefault();
+
+                var afterElement = getDragAfterElement(list, event.clientY);
+
+                if (!afterElement) {
+                    list.appendChild(activeItem);
+                } else if (afterElement !== activeItem) {
+                    list.insertBefore(activeItem, afterElement);
+                }
+
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+            });
+
+            list.addEventListener('drop', function(event) {
+                if (activeItem) {
+                    event.preventDefault();
+                }
+            });
+        });
+
+        document.addEventListener('mouseup', clearPendingDrag);
+        document.addEventListener('touchend', clearPendingDrag);
+        document.addEventListener('touchcancel', clearPendingDrag);
+    };
+
     var initializeToggleRows = function() {
         var rows = document.querySelectorAll('.wma-admin-menu__submenu-row');
 
@@ -264,8 +417,10 @@
     };
 
     var init = function() {
+        initializeSortableLists();
         initializeToggleRows();
         initializeMenuInputs();
+        initializeVisibilityCheckboxes();
     };
 
     if (document.readyState === 'loading') {

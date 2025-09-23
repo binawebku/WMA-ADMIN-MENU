@@ -10,6 +10,8 @@ $options = [
     'wma_admin_hidden_submenus' => [],
     'wma_admin_menu_labels'     => [],
     'wma_admin_submenu_labels'  => [],
+    'wma_admin_menu_order'      => [],
+    'wma_admin_submenu_order'   => [],
 ];
 $wp_settings_errors = [];
 $settings_errors_calls = [];
@@ -177,6 +179,8 @@ set_test_option('wma_admin_hidden_menus', []);
 set_test_option('wma_admin_hidden_submenus', []);
 set_test_option('wma_admin_menu_labels', []);
 set_test_option('wma_admin_submenu_labels', []);
+set_test_option('wma_admin_menu_order', []);
+set_test_option('wma_admin_submenu_order', []);
 
 do_action('admin_menu');
 
@@ -208,6 +212,8 @@ set_test_option('wma_admin_menu_labels', ['options-general.php' => 'Site Options
 set_test_option('wma_admin_submenu_labels', [
     'options-general.php' => ['options-reading.php' => 'Reading Setup'],
 ]);
+set_test_option('wma_admin_menu_order', []);
+set_test_option('wma_admin_submenu_order', []);
 
 do_action('admin_menu');
 
@@ -233,10 +239,45 @@ if (!isset($submenu['options-general.php']) || $submenu['options-general.php'] !
 }
 
 reset_admin_structures();
+set_test_option('wma_admin_hidden_menus', []);
+set_test_option('wma_admin_hidden_submenus', []);
+set_test_option('wma_admin_menu_labels', []);
+set_test_option('wma_admin_submenu_labels', []);
+set_test_option('wma_admin_menu_order', ['index.php', 'options-general.php']);
+set_test_option('wma_admin_submenu_order', [
+    'options-general.php' => ['options-general.php', 'options-reading.php'],
+]);
+
+do_action('admin_menu');
+
+$expected_menu_stored_order = [
+    ['Dashboard', 'read', 'index.php'],
+    ['Settings', 'manage_options', 'options-general.php'],
+];
+
+$expected_submenu_stored_order = [
+    ['General', 'manage_options', 'options-general.php'],
+    ['Reading', 'manage_options', 'options-reading.php'],
+    ['WMA Admin Menu', 'manage_options', 'wma-admin-menu'],
+];
+
+if ($menu !== $expected_menu_stored_order) {
+    $tests_passed = false;
+    $results['stored_menu_order'] = $menu;
+}
+
+if (!isset($submenu['options-general.php']) || $submenu['options-general.php'] !== $expected_submenu_stored_order) {
+    $tests_passed = false;
+    $results['stored_submenu_order'] = isset($submenu['options-general.php']) ? $submenu['options-general.php'] : null;
+}
+
+reset_admin_structures();
 set_test_option('wma_admin_hidden_menus', ['options-general.php']);
 set_test_option('wma_admin_hidden_submenus', []);
 set_test_option('wma_admin_menu_labels', ['options-general.php' => 'Site Options']);
 set_test_option('wma_admin_submenu_labels', []);
+set_test_option('wma_admin_menu_order', []);
+set_test_option('wma_admin_submenu_order', []);
 
 do_action('admin_menu');
 
