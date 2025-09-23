@@ -63,49 +63,69 @@
     cursor: grabbing;
 }
 
-.wma-admin-menu__menu-group {
+.wma-admin-menu__combined-group {
     border: 1px solid #d0d7de;
-    border-radius: 12px;
-    padding: 1.1rem;
+    border-radius: 14px;
+    padding: 1.25rem;
     background: #ffffff;
     display: grid;
+    gap: 1.05rem;
+    max-width: 68rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.wma-admin-menu__combined-row {
+    display: grid;
     gap: 0.75rem;
-    max-width: 60rem;
-    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+    padding: 0.85rem 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f9fafb 0%, #f1f5f9 100%);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.wma-admin-menu__combined-row:hover {
+    border-color: #bfdbfe;
+    background: #f8fafc;
+    box-shadow: 0 12px 32px -26px rgba(37, 99, 235, 0.6);
+}
+
+.wma-admin-menu__combined-row.has-custom-label {
+    border-color: #2563eb;
+    background: #eef2ff;
+    box-shadow: 0 16px 36px -28px rgba(37, 99, 235, 0.65);
+}
+
+.wma-admin-menu__combined-row.is-open {
+    border-color: #93c5fd;
+}
+
+.wma-admin-menu__combined-row.is-hidden {
+    opacity: 0.8;
+    background: #f1f5f9;
+}
+
+.wma-admin-menu__combined-row.is-dragging {
+    opacity: 0.65;
+    box-shadow: 0 20px 42px -30px rgba(37, 99, 235, 0.6);
 }
 
 .wma-admin-menu__menu-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1.4fr) minmax(12rem, 1fr);
+    align-items: flex-start;
     gap: 0.75rem;
-    align-items: center;
-    padding: 0.65rem 0.85rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    background: #f9fafb;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
-}
-
-.wma-admin-menu__menu-row:hover {
-    border-color: #bfdbfe;
-    box-shadow: 0 8px 18px -16px rgba(37, 99, 235, 0.75);
-    background: #f8fafc;
-}
-
-.wma-admin-menu__menu-row.has-custom-label {
-    border-color: #2563eb;
-    background: #eef2ff;
-    box-shadow: 0 10px 22px -18px rgba(37, 99, 235, 0.8);
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
 .wma-admin-menu__menu-row.is-hidden {
-    opacity: 0.75;
-    background: #f1f5f9;
+    opacity: 0.85;
 }
 
-.wma-admin-menu__menu-row.is-dragging {
-    opacity: 0.65;
-    box-shadow: 0 12px 28px -20px rgba(37, 99, 235, 0.6);
+.wma-admin-menu__menu-row.has-custom-label .wma-admin-menu__menu-name {
+    color: #1d4ed8;
 }
 
 .wma-admin-menu__menu-primary {
@@ -128,78 +148,61 @@
 }
 
 .wma-admin-menu__menu-rename {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    grid-column: 3;
-}
-
-.wma-admin-menu__submenu-group {
     display: grid;
-    gap: 1.25rem;
-    margin-top: 1.6rem;
-}
-
-.wma-admin-menu__submenu-row {
-    border: 1px solid #d0d7de;
-    border-radius: 12px;
-    background: #ffffff;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-    overflow: hidden;
-}
-
-.wma-admin-menu__submenu-row.is-open {
-    border-color: #2563eb;
-    box-shadow: 0 16px 28px -22px rgba(37, 99, 235, 0.7);
-}
-
-.wma-admin-menu__submenu-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(14rem, 1fr);
-    align-items: center;
-    gap: 0.85rem;
-    padding: 0.8rem 1rem;
-    background: #f8fafc;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-.wma-admin-menu__submenu-row.is-open .wma-admin-menu__submenu-header {
-    background: #eff6ff;
+    gap: 0.45rem;
+    align-content: flex-start;
 }
 
 .wma-admin-menu__submenu-toggle {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.65rem;
-    border: 0;
-    background: transparent;
-    font-size: 15px;
+    gap: 0.45rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #e0f2fe;
+    color: #1d4ed8;
+    font-size: 12px;
     font-weight: 600;
-    color: #0f172a;
-    padding: 0;
+    letter-spacing: 0.02em;
+    padding: 0.3rem 0.85rem;
     cursor: pointer;
-    text-align: left;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    width: max-content;
+}
+
+.wma-admin-menu__submenu-toggle:hover {
+    background: #c7d2fe;
+    border-color: #93c5fd;
 }
 
 .wma-admin-menu__submenu-toggle:focus-visible {
     outline: 2px solid #60a5fa;
-    outline-offset: 3px;
+    outline-offset: 2px;
 }
 
-.wma-admin-menu__submenu-row.is-open .wma-admin-menu__submenu-toggle {
+.wma-admin-menu__combined-row.is-open .wma-admin-menu__submenu-toggle {
+    background: #dbeafe;
+    border-color: #93c5fd;
     color: #1d4ed8;
 }
 
-.wma-admin-menu__submenu-title {
-    flex: 1;
-    line-height: 1.4;
+.wma-admin-menu__submenu-toggle-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 999px;
+    background: rgba(29, 78, 216, 0.18);
+    color: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 0 0.35rem;
 }
 
 .wma-admin-menu__submenu-icon {
-    width: 1rem;
-    height: 1rem;
+    width: 0.65rem;
+    height: 0.65rem;
     position: relative;
     color: currentColor;
 }
@@ -207,8 +210,8 @@
 .wma-admin-menu__submenu-icon::before {
     content: '';
     position: absolute;
-    width: 0.55rem;
-    height: 0.55rem;
+    width: 0.45rem;
+    height: 0.45rem;
     border-top: 2px solid currentColor;
     border-right: 2px solid currentColor;
     top: 50%;
@@ -217,21 +220,20 @@
     transition: transform 0.2s ease;
 }
 
-.wma-admin-menu__submenu-row.is-open .wma-admin-menu__submenu-icon::before {
+.wma-admin-menu__combined-row.is-open .wma-admin-menu__submenu-icon::before {
     transform: translate(-50%, -50%) rotate(135deg);
 }
 
-.wma-admin-menu__submenu-parent-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
+.wma-admin-menu__combined-submenu {
+    background: #ffffff;
+    border: 1px dashed #dbeafe;
+    border-radius: 10px;
+    padding: 0.75rem 0.85rem 0.9rem;
 }
 
 .wma-admin-menu__submenu-items {
-    padding: 0.9rem 1rem 1.05rem;
     display: grid;
-    gap: 0.65rem;
-    background: #f3f4f6;
+    gap: 0.6rem;
 }
 
 .wma-admin-menu__submenu-items[aria-hidden="true"] {
@@ -240,26 +242,26 @@
 
 .wma-admin-menu__submenu-item {
     display: grid;
-    grid-template-columns: auto minmax(0, 1.2fr) minmax(11rem, 1fr);
-    gap: 0.7rem;
+    grid-template-columns: auto minmax(0, 1.25fr) minmax(10rem, 1fr);
+    gap: 0.65rem;
     align-items: center;
-    padding: 0.6rem 0.75rem;
+    padding: 0.55rem 0.7rem;
     border: 1px solid #e2e8f0;
     border-radius: 10px;
-    background: #ffffff;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+    background: #f9fafb;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .wma-admin-menu__submenu-item:hover {
     border-color: #bfdbfe;
-    box-shadow: 0 10px 24px -20px rgba(37, 99, 235, 0.65);
+    box-shadow: 0 10px 24px -20px rgba(37, 99, 235, 0.6);
     background: #f8fafc;
 }
 
 .wma-admin-menu__submenu-item.has-custom-label {
     border-color: #2563eb;
     background: #eef2ff;
-    box-shadow: 0 12px 28px -22px rgba(37, 99, 235, 0.75);
+    box-shadow: 0 12px 28px -22px rgba(37, 99, 235, 0.7);
 }
 
 .wma-admin-menu__submenu-item.is-hidden {
@@ -292,9 +294,9 @@
 }
 
 .wma-admin-menu__submenu-item-field {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: 0.35rem;
+    align-content: flex-start;
 }
 
 .wma-admin-menu__order-input {
@@ -302,22 +304,25 @@
 }
 
 @media (max-width: 960px) {
+    .wma-admin-menu__combined-group {
+        padding: 1rem;
+    }
+
+    .wma-admin-menu__combined-row {
+        padding: 0.75rem 0.8rem;
+    }
+
     .wma-admin-menu__menu-row {
         grid-template-columns: auto minmax(0, 1fr);
-        align-items: flex-start;
     }
 
     .wma-admin-menu__menu-rename {
-        grid-column: 2;
+        grid-column: 1 / -1;
     }
 
-    .wma-admin-menu__submenu-header {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 0.6rem;
-    }
-
-    .wma-admin-menu__submenu-parent-field {
+    .wma-admin-menu__submenu-toggle {
         width: 100%;
+        justify-content: space-between;
     }
 
     .wma-admin-menu__submenu-item {
@@ -327,9 +332,5 @@
 
     .wma-admin-menu__submenu-item-field {
         grid-column: 2;
-    }
-
-    .wma-admin-menu__submenu-items {
-        padding: 0.85rem 0.85rem 1rem;
     }
 }

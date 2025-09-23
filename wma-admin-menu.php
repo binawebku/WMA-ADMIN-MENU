@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WMA Admin Menu
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
- * Version: 1.0.5
+ * Version: 1.0.6
  * Author: Wan Mohd Aiman Binawebpro.com
  * Author URI: https://binawebpro.com
  */
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class WMA_Admin_Menu {
 
-    private const VERSION                = '1.0.5';
+    private const VERSION                = '1.0.6';
     private const OPTION_GROUP           = 'wma_admin_menu';
     private const OPTION_HIDDEN_MENUS    = 'wma_admin_hidden_menus';
     private const OPTION_HIDDEN_SUBMENUS = 'wma_admin_hidden_submenus';
@@ -124,25 +124,11 @@ class WMA_Admin_Menu {
         );
 
         add_settings_field(
-            self::OPTION_HIDDEN_MENUS,
-            'Hide top-level menus',
-            [ $this, 'render_menu_checklist' ],
+            'wma_admin_menu_combined',
+            'Menu visibility & labels',
+            [ $this, 'render_combined_menu_checklist' ],
             self::SETTINGS_PAGE_SLUG,
-            'wma_admin_menu_visibility',
-            [
-                'type' => 'menu',
-            ]
-        );
-
-        add_settings_field(
-            self::OPTION_HIDDEN_SUBMENUS,
-            'Hide submenu items',
-            [ $this, 'render_menu_checklist' ],
-            self::SETTINGS_PAGE_SLUG,
-            'wma_admin_menu_visibility',
-            [
-                'type' => 'submenu',
-            ]
+            'wma_admin_menu_visibility'
         );
     }
 
@@ -275,19 +261,186 @@ class WMA_Admin_Menu {
     }
 
     /**
-     * Render a checkbox list of menu or submenu items.
-     *
-     * @param array $args Field arguments.
+     * Render combined menu and submenu controls in a unified checklist.
      */
-    public function render_menu_checklist( array $args ) {
-        $type = isset( $args['type'] ) ? $args['type'] : 'menu';
+    public function render_combined_menu_checklist() {
+        $menu_items        = $this->get_menu_items();
+        $submenu_items     = $this->get_submenu_items();
+        $menu_order        = $this->get_menu_order();
+        $submenu_order     = $this->get_submenu_order();
+        $hidden_menus      = $this->get_hidden_menu_slugs();
+        $checked_strings   = $this->get_option_array( self::OPTION_HIDDEN_SUBMENUS );
+        $checked_pairs     = [];
 
-        if ( 'submenu' === $type ) {
-            $this->render_submenu_checkboxes();
+        foreach ( $this->get_hidden_submenu_pairs() as $pair ) {
+            $checked_pairs[] = $pair['parent'] . '|' . $pair['submenu'];
+        }
+
+        if ( empty( $menu_items ) && empty( $submenu_items ) ) {
+            echo '<p>' . $this->escape_html( 'No admin menus are available.' ) . '</p>';
             return;
         }
 
-        $this->render_menu_checkboxes();
+        $ordered_slugs = array_values(
+            array_unique(
+                array_merge(
+                    $menu_order,
+                    array_keys( $menu_items ),
+                    array_keys( $submenu_items )
+                )
+            )
+        );
+
+        if ( empty( $ordered_slugs ) ) {
+            echo '<p>' . $this->escape_html( 'No admin menus are available.' ) . '</p>';
+            return;
+        }
+
+        echo '<div class="wma-admin-menu__combined-group" data-wma-combined-group="true" data-wma-sortable-list="menus">';
+
+        foreach ( $ordered_slugs as $slug ) {
+            if ( '' === $slug ) {
+                continue;
+            }
+
+            if ( ! isset( $menu_items[ $slug ] ) ) {
+                $fallback_label       = $this->generate_fallback_label( $slug );
+                $menu_items[ $slug ] = [
+                    'label'          => $fallback_label,
+                    'original_label' => $fallback_label,
+                    'custom_label'   => '',
+                ];
+            }
+
+            $data           = $menu_items[ $slug ];
+            $label          = isset( $data['label'] ) ? $data['label'] : $slug;
+            $original_label = isset( $data['original_label'] ) ? $data['original_label'] : $label;
+            $custom_label   = isset( $data['custom_label'] ) ? $data['custom_label'] : '';
+            $is_hidden      = in_array( $slug, $hidden_menus, true );
+            $checkbox_id    = 'wma-admin-menu-toggle-' . md5( 'menu-' . $slug );
+            $input_id       = 'wma-admin-menu-label-' . md5( 'label-' . $slug );
+
+            $child_data          = isset( $submenu_items[ $slug ] ) ? $submenu_items[ $slug ] : [];
+            $children            = isset( $child_data['items'] ) ? $child_data['items'] : [];
+            $stored_child_order  = isset( $submenu_order[ $slug ] ) ? $submenu_order[ $slug ] : [];
+            $ordered_child_slugs = array_values( array_unique( array_merge( $stored_child_order, array_keys( $children ) ) ) );
+            $ordered_children    = [];
+            $has_custom_child    = false;
+
+            foreach ( $ordered_child_slugs as $child_slug ) {
+                if ( '' === $child_slug ) {
+                    continue;
+                }
+
+                if ( ! isset( $children[ $child_slug ] ) ) {
+                    $fallback_label         = $this->generate_fallback_label( $child_slug );
+                    $children[ $child_slug ] = [
+                        'label'          => $fallback_label,
+                        'original_label' => $fallback_label,
+                        'custom_label'   => '',
+                    ];
+                }
+
+                $ordered_children[ $child_slug ] = $children[ $child_slug ];
+
+                if ( isset( $children[ $child_slug ]['custom_label'] ) && '' !== $children[ $child_slug ]['custom_label'] ) {
+                    $has_custom_child = true;
+                }
+            }
+
+            $child_values      = ! empty( $checked_pairs ) ? $checked_pairs : $checked_strings;
+            $has_checked_child = $this->has_checked_submenu( $slug, $child_values );
+            $has_children      = ! empty( $ordered_children );
+            $should_expand     = $has_children && ( $has_checked_child || $has_custom_child || '' !== $custom_label );
+
+            $row_classes = 'wma-admin-menu__combined-row';
+            $row_classes .= $has_children ? ' has-children' : '';
+            $row_classes .= ( '' !== $custom_label || $has_custom_child ) ? ' has-custom-label' : '';
+            $row_classes .= $is_hidden ? ' is-hidden' : '';
+            $row_classes .= $should_expand ? ' is-open' : '';
+
+            $row_attributes = 'class="' . $this->escape_attr( $row_classes ) . '" data-wma-combined-row="true" data-wma-sortable-item="true"';
+
+            if ( $has_children ) {
+                $row_attributes .= ' data-wma-has-children="true"';
+            }
+
+            $header_classes = 'wma-admin-menu__menu-row';
+            $header_classes .= $is_hidden ? ' is-hidden' : '';
+            $header_classes .= ( '' !== $custom_label || $has_custom_child ) ? ' has-custom-label' : '';
+
+            echo '<div ' . $row_attributes . '>';
+            echo '<div class="' . $this->escape_attr( $header_classes ) . '">';
+            echo '<span class="wma-admin-menu__drag-handle" data-wma-drag-handle="true" aria-hidden="true"></span>';
+            echo '<div class="wma-admin-menu__menu-primary">';
+            echo '<input type="checkbox" id="' . $this->escape_attr( $checkbox_id ) . '" name="' . $this->escape_attr( self::OPTION_HIDDEN_MENUS ) . '[]" value="' . $this->escape_attr( $slug ) . '"' . ( $is_hidden ? ' checked="checked"' : '' ) . ' />';
+            echo '<label for="' . $this->escape_attr( $checkbox_id ) . '" class="wma-admin-menu__menu-name">' . $this->escape_html( $label ) . '</label>';
+            echo '</div>';
+
+            echo '<div class="wma-admin-menu__menu-rename">';
+            echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $input_id ) . '">';
+            echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $original_label ) . '</span>';
+            echo '</label>';
+            echo '<input type="text" id="' . $this->escape_attr( $input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_MENU_LABELS ) . '[' . $this->escape_attr( $slug ) . ']" value="' . $this->escape_attr( $custom_label ) . '" placeholder="' . $this->escape_attr( $original_label ) . '" />';
+
+            if ( $has_children ) {
+                $container_id = 'wma-admin-menu-submenu-' . md5( $slug );
+                $expanded     = $should_expand ? 'true' : 'false';
+                $count        = count( $ordered_children );
+
+                echo '<button type="button" class="wma-admin-menu__submenu-toggle" aria-expanded="' . $this->escape_attr( $expanded ) . '" aria-controls="' . $this->escape_attr( $container_id ) . '">';
+                echo '<span class="wma-admin-menu__submenu-toggle-label">' . $this->escape_html( 'Submenus' ) . '</span>';
+                echo '<span class="wma-admin-menu__submenu-toggle-count">' . $this->escape_html( (string) $count ) . '</span>';
+                echo '<span class="wma-admin-menu__submenu-icon" aria-hidden="true"></span>';
+                echo '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( 'for ' . $label ) . '</span>';
+                echo '</button>';
+            }
+
+            echo '</div>';
+            echo '<input type="hidden" class="wma-admin-menu__order-input" name="' . $this->escape_attr( self::OPTION_MENU_ORDER ) . '[]" value="' . $this->escape_attr( $slug ) . '" />';
+            echo '</div>';
+
+            if ( $has_children ) {
+                $container_id = 'wma-admin-menu-submenu-' . md5( $slug );
+                $aria_hidden  = $should_expand ? 'false' : 'true';
+
+                echo '<div id="' . $this->escape_attr( $container_id ) . '" class="wma-admin-menu__combined-submenu wma-admin-menu__submenu-items" data-wma-sortable-list="submenu" aria-hidden="' . $this->escape_attr( $aria_hidden ) . '">';
+
+                foreach ( $ordered_children as $child_slug => $item_data ) {
+                    $child_label          = isset( $item_data['label'] ) ? $item_data['label'] : $child_slug;
+                    $child_original_label = isset( $item_data['original_label'] ) ? $item_data['original_label'] : $child_label;
+                    $child_custom_label   = isset( $item_data['custom_label'] ) ? $item_data['custom_label'] : '';
+                    $value                = $slug . '|' . $child_slug;
+                    $is_child_hidden      = in_array( $value, $child_values, true );
+                    $child_row_id         = 'wma-admin-menu-submenu-checkbox-' . md5( $value );
+                    $child_input_id       = 'wma-admin-menu-submenu-label-' . md5( 'label-' . $value );
+                    $child_row_classes    = 'wma-admin-menu__submenu-item';
+                    $child_row_classes   .= '' !== $child_custom_label ? ' has-custom-label' : '';
+                    $child_row_classes   .= $is_child_hidden ? ' is-hidden' : '';
+
+                    echo '<div class="' . $this->escape_attr( $child_row_classes ) . '" data-wma-sortable-item="true">';
+                    echo '<span class="wma-admin-menu__drag-handle" data-wma-drag-handle="true" aria-hidden="true"></span>';
+                    echo '<div class="wma-admin-menu__submenu-item-primary">';
+                    echo '<input type="checkbox" id="' . $this->escape_attr( $child_row_id ) . '" name="' . $this->escape_attr( self::OPTION_HIDDEN_SUBMENUS ) . '[]" value="' . $this->escape_attr( $value ) . '"' . ( $is_child_hidden ? ' checked="checked"' : '' ) . ' />';
+                    echo '<label for="' . $this->escape_attr( $child_row_id ) . '" class="wma-admin-menu__submenu-name">' . $this->escape_html( $child_label ) . '</label>';
+                    echo '</div>';
+                    echo '<div class="wma-admin-menu__submenu-item-field">';
+                    echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $child_input_id ) . '">';
+                    echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $child_original_label ) . '</span>';
+                    echo '</label>';
+                    echo '<input type="text" id="' . $this->escape_attr( $child_input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_SUBMENU_LABELS ) . '[' . $this->escape_attr( $slug ) . '][' . $this->escape_attr( $child_slug ) . ']" value="' . $this->escape_attr( $child_custom_label ) . '" placeholder="' . $this->escape_attr( $child_original_label ) . '" />';
+                    echo '</div>';
+                    echo '<input type="hidden" class="wma-admin-menu__order-input" name="' . $this->escape_attr( self::OPTION_SUBMENU_ORDER ) . '[' . $this->escape_attr( $slug ) . '][]" value="' . $this->escape_attr( $child_slug ) . '" />';
+                    echo '</div>';
+                }
+
+                echo '</div>';
+            }
+
+            echo '</div>';
+        }
+
+        echo '</div>';
     }
 
     /**
@@ -635,193 +788,6 @@ class WMA_Admin_Menu {
                 }
             }
         }
-    }
-
-    /**
-     * Render checkbox controls for top-level menus.
-     */
-    private function render_menu_checkboxes() {
-        $menu_items    = $this->get_menu_items();
-        $checked_items = $this->get_hidden_menu_slugs();
-        $stored_order  = $this->get_menu_order();
-
-        if ( empty( $menu_items ) ) {
-            echo '<p>' . $this->escape_html( 'No top-level menus are available.' ) . '</p>';
-            return;
-        }
-
-        $ordered_slugs = array_values( array_unique( array_merge( $stored_order, array_keys( $menu_items ) ) ) );
-
-        echo '<div class="wma-admin-menu__menu-group" data-wma-menu-group="true" data-wma-sortable-list="menus">';
-
-        foreach ( $ordered_slugs as $slug ) {
-            if ( '' === $slug ) {
-                continue;
-            }
-
-            if ( ! isset( $menu_items[ $slug ] ) ) {
-                $fallback_label = $this->generate_fallback_label( $slug );
-
-                $menu_items[ $slug ] = [
-                    'label'          => $fallback_label,
-                    'original_label' => $fallback_label,
-                    'custom_label'   => '',
-                ];
-            }
-
-            $data           = $menu_items[ $slug ];
-            $label          = isset( $data['label'] ) ? $data['label'] : $slug;
-            $original_label = isset( $data['original_label'] ) ? $data['original_label'] : $label;
-            $custom_label   = isset( $data['custom_label'] ) ? $data['custom_label'] : '';
-            $is_hidden      = in_array( $slug, $checked_items, true );
-            $checkbox_id    = 'wma-admin-menu-toggle-' . md5( $slug );
-            $input_id       = 'wma-admin-menu-label-' . md5( 'label-' . $slug );
-            $row_classes    = 'wma-admin-menu__menu-row';
-            $row_classes   .= '' !== $custom_label ? ' has-custom-label' : '';
-            $row_classes   .= $is_hidden ? ' is-hidden' : '';
-
-            echo '<div class="' . $this->escape_attr( $row_classes ) . '" data-wma-sortable-item="true" draggable="true">';
-            echo '<span class="wma-admin-menu__drag-handle" data-wma-drag-handle="true" aria-hidden="true"></span>';
-            echo '<div class="wma-admin-menu__menu-primary">';
-            echo '<input type="checkbox" id="' . $this->escape_attr( $checkbox_id ) . '" name="' . $this->escape_attr( self::OPTION_HIDDEN_MENUS ) . '[]" value="' . $this->escape_attr( $slug ) . '"' . ( $is_hidden ? ' checked="checked"' : '' ) . ' />';
-            echo '<label for="' . $this->escape_attr( $checkbox_id ) . '" class="wma-admin-menu__menu-name">' . $this->escape_html( $label ) . '</label>';
-            echo '</div>';
-
-            echo '<div class="wma-admin-menu__menu-rename">';
-            echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $input_id ) . '">';
-            echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $original_label ) . '</span>';
-            echo '</label>';
-            echo '<input type="text" id="' . $this->escape_attr( $input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_MENU_LABELS ) . '[' . $this->escape_attr( $slug ) . ']" value="' . $this->escape_attr( $custom_label ) . '" placeholder="' . $this->escape_attr( $original_label ) . '" />';
-            echo '</div>';
-            echo '<input type="hidden" class="wma-admin-menu__order-input" name="' . $this->escape_attr( self::OPTION_MENU_ORDER ) . '[]" value="' . $this->escape_attr( $slug ) . '" />';
-            echo '</div>';
-        }
-
-        echo '</div>';
-    }
-
-    /**
-     * Render checkbox controls for submenu items.
-     */
-    private function render_submenu_checkboxes() {
-        $submenu_items    = $this->get_submenu_items();
-        $stored_order     = $this->get_submenu_order();
-        $checked_strings  = $this->get_option_array( self::OPTION_HIDDEN_SUBMENUS );
-        $checked_pairs    = [];
-
-        foreach ( $this->get_hidden_submenu_pairs() as $pair ) {
-            $checked_pairs[] = $pair['parent'] . '|' . $pair['submenu'];
-        }
-
-        if ( empty( $submenu_items ) ) {
-            echo '<p>' . $this->escape_html( 'No submenu items are available.' ) . '</p>';
-            return;
-        }
-
-        echo '<div class="wma-admin-menu__submenu-group" data-wma-submenu-group="true">';
-
-        foreach ( $submenu_items as $parent_slug => $data ) {
-            $items                 = isset( $data['items'] ) ? $data['items'] : [];
-            $parent_label          = isset( $data['parent_label'] ) ? $data['parent_label'] : $parent_slug;
-            $parent_original_label = isset( $data['parent_original_label'] ) ? $data['parent_original_label'] : $parent_label;
-            $parent_custom_label   = isset( $data['parent_custom_label'] ) ? $data['parent_custom_label'] : '';
-
-            if ( empty( $items ) ) {
-                continue;
-            }
-
-            $stored_child_order  = isset( $stored_order[ $parent_slug ] ) ? $stored_order[ $parent_slug ] : [];
-            $ordered_child_slugs = array_values( array_unique( array_merge( $stored_child_order, array_keys( $items ) ) ) );
-            $ordered_children    = [];
-            $has_custom_child    = false;
-
-            foreach ( $ordered_child_slugs as $child_slug ) {
-                if ( '' === $child_slug ) {
-                    continue;
-                }
-
-                if ( ! isset( $items[ $child_slug ] ) ) {
-                    $fallback_label       = $this->generate_fallback_label( $child_slug );
-                    $items[ $child_slug ] = [
-                        'label'          => $fallback_label,
-                        'original_label' => $fallback_label,
-                        'custom_label'   => '',
-                    ];
-                }
-
-                $ordered_children[ $child_slug ] = $items[ $child_slug ];
-
-                if ( isset( $items[ $child_slug ]['custom_label'] ) && '' !== $items[ $child_slug ]['custom_label'] ) {
-                    $has_custom_child = true;
-                }
-            }
-
-            $has_checked_submenu = $this->has_checked_submenu( $parent_slug, ! empty( $checked_pairs ) ? $checked_pairs : $checked_strings );
-            $should_expand       = $has_checked_submenu || $has_custom_child || '' !== $parent_custom_label;
-            $row_classes         = 'wma-admin-menu__submenu-row';
-
-            if ( $should_expand ) {
-                $row_classes .= ' is-open';
-            }
-
-            if ( $has_custom_child || '' !== $parent_custom_label ) {
-                $row_classes .= ' has-custom-label';
-            }
-
-            $container_id      = 'wma-admin-menu-submenu-' . md5( $parent_slug );
-            $expanded_attr     = $should_expand ? 'true' : 'false';
-            $aria_hidden_attr  = $should_expand ? 'false' : 'true';
-
-            echo '<div class="' . $this->escape_attr( $row_classes ) . '" data-wma-submenu-row="true">';
-            echo '<div class="wma-admin-menu__submenu-header">';
-            echo '<button type="button" class="wma-admin-menu__submenu-toggle" aria-expanded="' . $this->escape_attr( $expanded_attr ) . '" aria-controls="' . $this->escape_attr( $container_id ) . '">';
-            echo '<span class="wma-admin-menu__submenu-title">' . $this->escape_html( $parent_label ) . '</span>';
-            echo '<span class="wma-admin-menu__submenu-icon" aria-hidden="true"></span>';
-            echo '</button>';
-            echo '<div class="wma-admin-menu__submenu-parent-field">';
-            $parent_input_id = 'wma-admin-menu-parent-label-' . md5( 'parent-' . $parent_slug );
-            echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $parent_input_id ) . '">';
-            echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $parent_original_label ) . '</span>';
-            echo '</label>';
-            echo '<input type="text" id="' . $this->escape_attr( $parent_input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_MENU_LABELS ) . '[' . $this->escape_attr( $parent_slug ) . ']" value="' . $this->escape_attr( $parent_custom_label ) . '" placeholder="' . $this->escape_attr( $parent_original_label ) . '" />';
-            echo '</div>';
-            echo '</div>';
-
-            echo '<div id="' . $this->escape_attr( $container_id ) . '" class="wma-admin-menu__submenu-items" data-wma-sortable-list="submenu" aria-hidden="' . $this->escape_attr( $aria_hidden_attr ) . '">';
-
-            foreach ( $ordered_children as $child_slug => $item_data ) {
-                $child_label          = isset( $item_data['label'] ) ? $item_data['label'] : $child_slug;
-                $child_original_label = isset( $item_data['original_label'] ) ? $item_data['original_label'] : $child_label;
-                $child_custom_label   = isset( $item_data['custom_label'] ) ? $item_data['custom_label'] : '';
-                $value                = $parent_slug . '|' . $child_slug;
-                $is_hidden            = in_array( $value, ! empty( $checked_pairs ) ? $checked_pairs : $checked_strings, true );
-                $child_row_id         = 'wma-admin-menu-submenu-checkbox-' . md5( $value );
-                $child_input_id       = 'wma-admin-menu-submenu-label-' . md5( 'label-' . $value );
-                $child_row_classes    = 'wma-admin-menu__submenu-item';
-                $child_row_classes   .= '' !== $child_custom_label ? ' has-custom-label' : '';
-                $child_row_classes   .= $is_hidden ? ' is-hidden' : '';
-
-                echo '<div class="' . $this->escape_attr( $child_row_classes ) . '" data-wma-sortable-item="true" draggable="true">';
-                echo '<span class="wma-admin-menu__drag-handle" data-wma-drag-handle="true" aria-hidden="true"></span>';
-                echo '<div class="wma-admin-menu__submenu-item-primary">';
-                echo '<input type="checkbox" id="' . $this->escape_attr( $child_row_id ) . '" name="' . $this->escape_attr( self::OPTION_HIDDEN_SUBMENUS ) . '[]" value="' . $this->escape_attr( $value ) . '"' . ( $is_hidden ? ' checked="checked"' : '' ) . ' />';
-                echo '<label for="' . $this->escape_attr( $child_row_id ) . '" class="wma-admin-menu__submenu-name">' . $this->escape_html( $child_label ) . '</label>';
-                echo '</div>';
-                echo '<div class="wma-admin-menu__submenu-item-field">';
-                echo '<label class="wma-admin-menu__field-label" for="' . $this->escape_attr( $child_input_id ) . '">';
-                echo $this->escape_html( 'Rename' ) . '<span class="wma-admin-menu__sr-only"> ' . $this->escape_html( $child_original_label ) . '</span>';
-                echo '</label>';
-                echo '<input type="text" id="' . $this->escape_attr( $child_input_id ) . '" class="wma-admin-menu__text-input" name="' . $this->escape_attr( self::OPTION_SUBMENU_LABELS ) . '[' . $this->escape_attr( $parent_slug ) . '][' . $this->escape_attr( $child_slug ) . ']" value="' . $this->escape_attr( $child_custom_label ) . '" placeholder="' . $this->escape_attr( $child_original_label ) . '" />';
-                echo '</div>';
-                echo '<input type="hidden" class="wma-admin-menu__order-input" name="' . $this->escape_attr( self::OPTION_SUBMENU_ORDER ) . '[' . $this->escape_attr( $parent_slug ) . '][]" value="' . $this->escape_attr( $child_slug ) . '" />';
-                echo '</div>';
-            }
-
-            echo '</div>';
-            echo '</div>';
-        }
-
-        echo '</div>';
     }
 
     /**
