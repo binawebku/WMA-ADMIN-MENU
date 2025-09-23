@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WMA Admin Menu
  * Description: Provides functions to hide and rearrange admin menu and submenu items.
- * Version: 1.0.3
+ * Version: 1.0.4
  * Author: Wan Mohd Aiman Binawebpro.com
  * Author URI: https://binawebpro.com
  */
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class WMA_Admin_Menu {
 
-    private const VERSION                = '1.0.3';
+    private const VERSION                = '1.0.4';
     private const OPTION_GROUP           = 'wma_admin_menu';
     private const OPTION_HIDDEN_MENUS    = 'wma_admin_hidden_menus';
     private const OPTION_HIDDEN_SUBMENUS = 'wma_admin_hidden_submenus';
@@ -160,6 +160,11 @@ class WMA_Admin_Menu {
         echo '<div class="wrap">';
         echo '<h1>' . $this->escape_html( self::SETTINGS_PAGE_TITLE ) . '</h1>';
         echo '<form method="post" action="options.php">';
+
+        if ( function_exists( 'settings_errors' ) ) {
+            // Display core success and error notices alongside the plugin reset notice.
+            settings_errors();
+        }
 
         if ( function_exists( 'settings_fields' ) ) {
             settings_fields( self::OPTION_GROUP );

@@ -11,6 +11,8 @@ $options = [
     'wma_admin_menu_labels'     => [],
     'wma_admin_submenu_labels'  => [],
 ];
+$wp_settings_errors = [];
+$settings_errors_calls = [];
 
 function add_filter($tag, $callback, $priority = 10) {
     global $filters;
@@ -34,6 +36,20 @@ function apply_filters($tag, $value) {
 function add_action($tag, $callback, $priority = 10) {
     global $actions;
     $actions[$tag][$priority][] = $callback;
+}
+
+function add_settings_error($setting, $code, $message, $type = 'error') {
+    global $wp_settings_errors;
+    if (!isset($wp_settings_errors[$setting])) {
+        $wp_settings_errors[$setting] = [];
+    }
+
+    $wp_settings_errors[$setting][] = [
+        'setting' => $setting,
+        'code'    => $code,
+        'message' => $message,
+        'type'    => $type,
+    ];
 }
 
 function do_action($tag, ...$args) {
@@ -76,6 +92,38 @@ function get_option($option, $default = false) {
 function set_test_option($option, $value) {
     global $options;
     $options[$option] = $value;
+}
+
+function settings_errors($setting = '', $sanitize = false, $hide_on_update = false) {
+    global $wp_settings_errors, $settings_errors_calls;
+
+    $settings_errors_calls[] = $setting;
+
+    $errors = [];
+
+    if ($setting === '') {
+        foreach ($wp_settings_errors as $group) {
+            foreach ($group as $error) {
+                $errors[] = $error;
+            }
+        }
+    } elseif (isset($wp_settings_errors[$setting])) {
+        $errors = $wp_settings_errors[$setting];
+    }
+
+    foreach ($errors as $error) {
+        $type = isset($error['type']) ? $error['type'] : 'error';
+        $message = isset($error['message']) ? $error['message'] : '';
+        echo '<div class="notice notice-' . $type . '"><p>' . $message . '</p></div>';
+    }
+
+    return $errors;
+}
+
+function reset_settings_errors_state() {
+    global $wp_settings_errors, $settings_errors_calls;
+    $wp_settings_errors = [];
+    $settings_errors_calls = [];
 }
 
 function reset_admin_structures() {
@@ -212,6 +260,31 @@ if (!$fallback_accessible) {
 } elseif ('Site Options' !== $fallback_entry[0]) {
     $tests_passed = false;
     $results['fallback_label'] = $fallback_entry;
+}
+
+reset_settings_errors_state();
+add_settings_error('general', 'settings_updated', 'Settings saved.', 'success');
+add_settings_error('wma-admin-menu-reset', 'settings_reset', 'Settings reset.', 'success');
+
+$settings_page = new WMA_Admin_Menu();
+
+ob_start();
+$settings_page->render_settings_page();
+$settings_page_output = ob_get_clean();
+
+if ($settings_errors_calls !== ['']) {
+    $tests_passed = false;
+    $results['settings_errors_calls'] = $settings_errors_calls;
+}
+
+if (strpos($settings_page_output, 'Settings saved.') === false) {
+    $tests_passed = false;
+    $results['settings_errors_general'] = $settings_page_output;
+}
+
+if (strpos($settings_page_output, 'Settings reset.') === false) {
+    $tests_passed = false;
+    $results['settings_errors_reset'] = $settings_page_output;
 }
 
 if ($tests_passed) {
